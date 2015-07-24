@@ -21,7 +21,7 @@ function MenuProvider($$interimElementProvider) {
     });
 
   /* @ngInject */
-  function menuDefaultOptions($$rAF, $window, $mdUtil, $mdTheming, $mdConstant, $document, $animateCss, $q) {
+  function menuDefaultOptions($$rAF, $window, $mdUtil, $mdTheming, $mdConstant, $document, $animateCss, $animate, $q) {
     var animator = $mdUtil.dom.animator;
 
     return {
@@ -36,30 +36,71 @@ function MenuProvider($$interimElementProvider) {
     };
 
     /**
+      * Show modal backdrop element...
+      */
+     function showBackdrop(scope, element, options) {
+
+       if (options.hasBackdrop) {
+         options.backdrop = $mdUtil.createBackdrop(scope, "md-menu-backdrop md-click-catcher");
+
+         //options.parent.append(options.backdrop);
+         $animate.enter(options.backdrop, options.parent);
+       }
+
+       // If we are not within a dialog...
+       if (options.disableParentScroll && !$mdUtil.getClosest(options.target, 'MD-DIALOG')) {
+         options.restoreScroll = $mdUtil.disableScrollAround(options.element,options.parent);
+       } else {
+         options.disableParentScroll = false;
+       }
+
+       /**
+        * Hide modal backdrop element...
+        */
+       return function hideBackdrop() {
+         if (options.backdrop) {
+           //options.backdrop.remove();
+           $animate.leave(options.backdrop);
+         }
+         if (options.disableParentScroll) {
+           options.restoreScroll();
+         }
+       }
+     }
+
+    /**
+     * Boilerplate interimElement onRemove function
+     * Handles removing the menu from the DOM, cleaning up the element
+     * and removing various listeners
+     */
+    function onRemove(scope, element, opts) {
+      opts.cleanupInteraction();
+      opts.cleanupResizing();
+
+      return $animateCss(element, { addClass : 'md-leave' })
+        .start()
+        .then(function() {
+          element.removeClass('md-active');
+          opts.hideBackdrop();
+
+          detachElement(element, opts);
+          opts.alreadyOpen = false;
+        });
+    }
+
+    /**
      * Boilerplate interimElement onShow function
-     * Handles inserting the menu into the DOM, positioning it, and wiring up
-     * various interaction events
+     * Handles inserting the menu into the DOM, positioning it, and wiring up various interaction events
      */
     function onShow(scope, element, opts) {
-
-      // Sanitize and set defaults on opts
-      buildOpts(opts);
+      sanitizeAndConfigure(opts);
 
       // Wire up theming on our menu element
       $mdTheming.inherit(opts.menuContentEl, opts.target);
 
       // Register various listeners to move menu on resize/orientation change
-      handleResizing();
-
-      // Disable scrolling
-      if (opts.disableParentScroll) {
-        opts.restoreScroll = $mdUtil.disableScrollAround(opts.element);
-      }
-
-      if (opts.backdrop) {
-        $mdTheming.inherit(opts.backdrop, opts.parent);
-        opts.parent.append(opts.backdrop);
-      }
+      opts.cleanupResizing = activateResizing();
+      opts.hideBackdrop = showBackdrop(scope,element,opts);
 
       // Return the promise for when our menu is done animating in
       return showMenu()
@@ -80,27 +121,26 @@ function MenuProvider($$interimElementProvider) {
           $animateCss(element, { removeClass: 'md-leave', duration:0 })
             .start()
             .then(function(){
-
               var position = calculateMenuPosition(element, opts);
 
               $animateCss(element, {
+                addClass : 'md-active',
                 from : animator.toCss( position ),
-                to : animator.toCss( { transform : 'scale(1.0,1.0)' }),
-                addClass : 'md-active'
+                to : animator.toCss( { transform : 'scale(1.0,1.0)' })
               })
               .start()
               .then( resolve );
 
              });
-
         });
       }
 
-
-      /** Check for valid opts and set some sane defaults */
-      function buildOpts() {
+      /**
+       * Check for valid opts and set some sane defaults
+       */
+      function sanitizeAndConfigure() {
         if (!opts.target) {
-          throw Error(
+          throw new Error(
             '$mdMenu.show() expected a target to animate from in options.target'
           );
         }
@@ -109,26 +149,33 @@ function MenuProvider($$interimElementProvider) {
           isRemoved: false,
           target: angular.element(opts.target), //make sure it's not a naked dom node
           parent: angular.element(opts.parent),
-          menuContentEl: angular.element(element[0].querySelector('md-menu-content')),
-          backdrop: opts.hasBackdrop && $mdUtil.createBackdrop(scope, "md-menu-backdrop md-click-catcher")
+          menuContentEl: angular.element(element[0].querySelector('md-menu-content'))
         });
       }
 
-      /** Wireup various resize listeners for screen changes */
-      function handleResizing() {
-        opts.resizeFn = function() {
+      /**
+       * Configure various resize listeners for screen changes
+       */
+      function activateResizing() {
+        var debouncedOnResize = $$rAF.throttle(function () {
           if (opts.isRemoved) return;
-
           var position = calculateMenuPosition(element, opts);
-          var config = angular.extend({ }, animator.toCss( position ));
 
-          return $animateCss.animate(element, config);
-        };
-        angular.element($window).on('resize', opts.resizeFn);
-        angular.element($window).on('orientationchange', opts.resizeFn);
-      }
+          $animateCss(element, animator.toCss(position)).start();
+        });
 
+        angular.element($window)
+          .on('resize', debouncedOnResize)
+          .on('orientationchange', debouncedOnResize);
 
+         return function deactivateResizing() {
+
+            // Disable resizing handlers
+            angular.element($window)
+              .off('resize', debouncedOnResize)
+              .off('orientationchange', debouncedOnResize);
+          }
+        }
 
       /**
        * Activate interaction on the menu. Wire up keyboard listerns for
@@ -138,28 +185,51 @@ function MenuProvider($$interimElementProvider) {
         element.addClass('md-clickable');
 
         // close on backdrop click
-        opts.backdrop && opts.backdrop.on('click', function(e) {
+        opts.backdrop && opts.backdrop.on('click', onBackdropClick );
+
+        // Wire up keyboard listeners.
+        // - Close on escape,
+        // - focus next item on down arrow,
+        // - focus prev item on up
+        opts.menuContentEl.on('keydown', onMenuKeyDown);
+        opts.menuContentEl[0].addEventListener('click', captureClickListener, true);
+
+        // kick off initial focus in the menu on the first element
+        var focusTarget = opts.menuContentEl[0].querySelector('[md-menu-focus-target]');
+        if (!focusTarget) focusTarget = opts.menuContentEl[0].firstElementChild.firstElementChild;
+        focusTarget.focus();
+
+        return function cleanupInteraction() {
+          element.removeClass('md-clickable');
+          opts.backdrop && opts.backdrop.off('click', onBackdropClick);
+          opts.menuContentEl.off('keydown', onMenuKeyDown);
+          opts.menuContentEl[0].removeEventListener('click', captureClickListener, true);
+        };
+
+        // ************************************
+        // Closure Functions
+        // ************************************
+
+        function onMenuKeyDown(ev) {
+           scope.$apply(function() {
+             switch (ev.keyCode) {
+               case $mdConstant.KEY_CODE.ESCAPE: opts.mdMenuCtrl.close(); break;
+               case $mdConstant.KEY_CODE.UP_ARROW: focusMenuItem(ev, opts.menuContentEl, opts, -1); break;
+               case $mdConstant.KEY_CODE.DOWN_ARROW: focusMenuItem(ev, opts.menuContentEl, opts, 1); break;
+             }
+           });
+        }
+
+        function onBackdropClick(e) {
           e.preventDefault();
           e.stopPropagation();
           scope.$apply(function() {
             opts.mdMenuCtrl.close(true);
           });
-        });
-
-        // Wire up keyboard listeners.
-        // Close on escape, focus next item on down arrow, focus prev item on up
-        opts.menuContentEl.on('keydown', function(ev) {
-          scope.$apply(function() {
-            switch (ev.keyCode) {
-              case $mdConstant.KEY_CODE.ESCAPE: opts.mdMenuCtrl.close(); break;
-              case $mdConstant.KEY_CODE.UP_ARROW: focusMenuItem(ev, opts.menuContentEl, opts, -1); break;
-              case $mdConstant.KEY_CODE.DOWN_ARROW: focusMenuItem(ev, opts.menuContentEl, opts, 1); break;
-            }
-          });
-        });
+        }
 
         // Close menu on menu item click, if said menu-item is not disabled
-        var captureClickListener = function(e) {
+        function captureClickListener(e) {
           var target = e.target;
           // Traverse up the event until we get to the menuContentEl to see if
           // there is an ng-click and that the ng-click is not disabled
@@ -191,20 +261,8 @@ function MenuProvider($$interimElementProvider) {
             }
             return false;
           }
-        };
-        opts.menuContentEl[0].addEventListener('click', captureClickListener, true);
+        }
 
-        // kick off initial focus in the menu on the first element
-        var focusTarget = opts.menuContentEl[0].querySelector('[md-menu-focus-target]');
-        if (!focusTarget) focusTarget = opts.menuContentEl[0].firstElementChild.firstElementChild;
-        focusTarget.focus();
-
-        return function cleanupInteraction() {
-          element.removeClass('md-clickable');
-          opts.backdrop.off('click');
-          opts.menuContentEl.off('keydown');
-          opts.menuContentEl[0].removeEventListener('click', captureClickListener, true);
-        };
       }
     }
 
@@ -247,32 +305,12 @@ function MenuProvider($$interimElementProvider) {
     }
 
     /**
-     * Boilerplate interimElement onRemove function
-     * Handles removing the menu from the DOM, cleaning up the element
-     * and removing various listeners
+     * Use browser to remove this element without triggering a $destory event
      */
-    function onRemove(scope, element, opts) {
-      // Disable resizing handlers
-      angular.element($window)
-        .off('resize', opts.resizeFn)
-        .off('orientationchange', opts.resizeFn);
-
-      opts.resizeFn = undefined;
-
-      return $animateCss(element, { addClass : 'md-leave' })
-        .start()
-        .then(function() {
-
-          element.removeClass('md-active');
-          opts.cleanupInteraction();
-
-          opts.backdrop && opts.backdrop.remove();
-          if (element[0].parentNode === opts.parent[0]) {
-            opts.parent[0].removeChild(element[0]);
-          }
-          opts.restoreScroll && opts.restoreScroll();
-
-        });
+    function detachElement(element, opts) {
+      if (element[0].parentNode === opts.parent[0]) {
+        opts.parent[0].removeChild(element[0]);
+      }
     }
 
     /**

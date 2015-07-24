@@ -123,6 +123,8 @@ function AnimateDomUtils($mdUtil, $q, $timeout, $mdConstant, $animateCss) {
       var lookups = 'left top right bottom width height x y';
 
       angular.forEach(raw, function(value,key) {
+        if ( angular.isUndefined(value) ) return;
+
         if ( lookups.indexOf(key) >= 0 ) {
           css[key] = value + 'px';
         } else {

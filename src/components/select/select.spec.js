@@ -1,4 +1,4 @@
-describe('<md-select>', function() {
+ddescribe('<md-select>', function() {
 
   beforeEach(module('material.components.input'));
   beforeEach(module('material.components.select'));
