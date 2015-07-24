@@ -21,7 +21,7 @@ function MenuProvider($$interimElementProvider) {
     });
 
   /* @ngInject */
-  function menuDefaultOptions($$rAF, $window, $mdUtil, $mdTheming, $mdConstant, $document) {
+  function menuDefaultOptions($$rAF, $window, $mdUtil, $mdTheming, $mdConstant, $document, $animateCss, $q) {
     var animator = $mdUtil.dom.animator;
 
     return {
@@ -60,15 +60,42 @@ function MenuProvider($$interimElementProvider) {
         $mdTheming.inherit(opts.backdrop, opts.parent);
         opts.parent.append(opts.backdrop);
       }
-      showMenu();
 
       // Return the promise for when our menu is done animating in
-      return animator
-          .waitTransitionEnd(element, {timeout: 370})
-          .then( function(response) {
-            opts.cleanupInteraction = activateInteraction();
-            return response;
-          });
+      return showMenu()
+        .then( function(response) {
+          opts.alreadyOpen = true;
+          opts.cleanupInteraction = activateInteraction();
+          return response;
+        });
+
+      /**
+       * Place the menu into the DOM and call positioning related functions
+       */
+      function showMenu() {
+        opts.parent.append(element);
+
+        return $q(function(resolve){
+
+          $animateCss(element, { removeClass: 'md-leave', duration:0 })
+            .start()
+            .then(function(){
+
+              var position = calculateMenuPosition(element, opts);
+
+              $animateCss(element, {
+                from : animator.toCss( position ),
+                to : animator.toCss( { transform : 'scale(1.0,1.0)' }),
+                addClass : 'md-active'
+              })
+              .start()
+              .then( resolve );
+
+             });
+
+        });
+      }
+
 
       /** Check for valid opts and set some sane defaults */
       function buildOpts() {
@@ -90,34 +117,17 @@ function MenuProvider($$interimElementProvider) {
       /** Wireup various resize listeners for screen changes */
       function handleResizing() {
         opts.resizeFn = function() {
-          positionMenu(element, opts);
+          if (opts.isRemoved) return;
+
+          var position = calculateMenuPosition(element, opts);
+          var config = angular.extend({ }, animator.toCss( position ));
+
+          return $animateCss.animate(element, config);
         };
         angular.element($window).on('resize', opts.resizeFn);
         angular.element($window).on('orientationchange', opts.resizeFn);
       }
 
-      /**
-       * Place the menu into the DOM and call positioning related functions
-       */
-      function showMenu() {
-        opts.parent.append(element);
-
-        element.removeClass('md-leave');
-        // Kick off our animation/positioning but first, wait a few frames
-        // so all of our computed positions/sizes are accurate
-        $$rAF(function() {
-          $$rAF(function() {
-            positionMenu(element, opts);
-            // Wait a frame before fading in menu (md-active) so that we don't trigger
-            // transitions on the menu position changing
-            $$rAF(function() {
-              element.addClass('md-active');
-              opts.alreadyOpen = true;
-              element[0].style[$mdConstant.CSS.TRANSFORM] = '';
-            });
-          });
-        });
-      }
 
 
       /**
@@ -232,11 +242,7 @@ function MenuProvider($$interimElementProvider) {
     function attemptFocus(el) {
       if (el && el.getAttribute('tabindex') != -1) {
         el.focus();
-        if ($document[0].activeElement == el) {
-          return true;
-        } else {
-          return false;
-        }
+        return  ($document[0].activeElement == el) ? true : false;
       }
     }
 
@@ -246,27 +252,26 @@ function MenuProvider($$interimElementProvider) {
      * and removing various listeners
      */
     function onRemove(scope, element, opts) {
-      opts.isRemoved = true;
-      element.addClass('md-leave');
-
-      opts.cleanupInteraction();
-
       // Disable resizing handlers
-      angular.element($window).off('resize', opts.resizeFn);
-      angular.element($window).off('orientationchange', opts.resizeFn);
+      angular.element($window)
+        .off('resize', opts.resizeFn)
+        .off('orientationchange', opts.resizeFn);
+
       opts.resizeFn = undefined;
 
-      // Wait for animate out, then remove from the DOM
-      return animator
-        .waitTransitionEnd(element, { timeout: 370 })
-        .finally(function() {
+      return $animateCss(element, { addClass : 'md-leave' })
+        .start()
+        .then(function() {
+
           element.removeClass('md-active');
+          opts.cleanupInteraction();
 
           opts.backdrop && opts.backdrop.remove();
           if (element[0].parentNode === opts.parent[0]) {
             opts.parent[0].removeChild(element[0]);
           }
           opts.restoreScroll && opts.restoreScroll();
+
         });
     }
 
@@ -275,8 +280,7 @@ function MenuProvider($$interimElementProvider) {
      * @param {HTMLElement} el - the menu container element
      * @param {object} opts - the interim element options object
      */
-    function positionMenu(el, opts) {
-      if (opts.isRemoved) return;
+    function calculateMenuPosition(el, opts) {
 
       var containerNode = el[0],
           openMenuNode = el[0].firstElementChild,
@@ -327,9 +331,9 @@ function MenuProvider($$interimElementProvider) {
         // case 'top':
         //   position.top = originNodeRect.top;
         //   break;
-        // case 'bottom':
-        //   position.top = originNodeRect.top + originNodeRect.height;
-        //   break;
+        case 'bottom':
+          position.top = originNodeRect.top + originNodeRect.height;
+          break;
         default:
           throw new Error('Invalid target mode "' + positionMode.top + '" specified for md-menu on Y axis.');
       }
@@ -344,10 +348,10 @@ function MenuProvider($$interimElementProvider) {
           transformOrigin += 'right';
           break;
         // Future support for mdMenuBar
-        // case 'left':
-        //   position.left = originNodeRect.left;
-        //   transformOrigin += 'left';
-        //   break;
+        case 'left':
+          position.left = originNodeRect.left;
+          transformOrigin += 'left';
+          break;
         // case 'right':
         //   position.left = originNodeRect.right - containerNode.offsetWidth;
         //   transformOrigin += 'right';
@@ -362,20 +366,18 @@ function MenuProvider($$interimElementProvider) {
 
       clamp(position);
 
-      el.css({
-        top: position.top + 'px',
-        left: position.left + 'px'
-      });
+      var scaleX = Math.round(100 * Math.min(originNodeRect.width / containerNode.offsetWidth, 1.0))/100;
+      var scaleY = Math.round(100 * Math.min(originNodeRect.height / containerNode.offsetHeight, 1.0))/100;
 
-      containerNode.style[$mdConstant.CSS.TRANSFORM_ORIGIN] = transformOrigin;
+      return {
+        top: Math.round(position.top),
+        left: Math.round(position.left),
 
-      // Animate a scale out if we aren't just repositioning
-      if (!opts.alreadyOpen) {
-        containerNode.style[$mdConstant.CSS.TRANSFORM] = 'scale(' +
-          Math.min(originNodeRect.width / containerNode.offsetWidth, 1.0) + ',' +
-          Math.min(originNodeRect.height / containerNode.offsetHeight, 1.0) +
-        ')';
-      }
+        // Animate a scale out if we aren't just repositioning
+        transform : !opts.alreadyOpen ? $mdUtil.supplant('scale({0},{1})',[scaleX, scaleY]) : undefined,
+
+        transformOrigin : transformOrigin
+      };
 
       /**
        * Clamps the repositioning of the menu within the confines of

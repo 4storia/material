@@ -3,12 +3,6 @@ describe('<md-select>', function() {
   beforeEach(module('material.components.input'));
   beforeEach(module('material.components.select'));
 
-  beforeEach(inject(function($mdUtil, $$q) {
-    $mdUtil.dom.animator.waitTransitionEnd = function() {
-      return $$q.when(true);
-    };
-  }));
-
   function setupSelect(attrs, options, bNoLabel) {
     var el;
     inject(function($compile, $rootScope) {
