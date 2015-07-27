@@ -157,23 +157,24 @@ function MenuProvider($$interimElementProvider) {
        * Configure various resize listeners for screen changes
        */
       function activateResizing() {
-        var debouncedOnResize = $$rAF.throttle(function () {
-          if (opts.isRemoved) return;
-          var position = calculateMenuPosition(element, opts);
 
-          $animateCss(element, animator.toCss(position)).start();
-        });
+        var debouncedOnResize = (function(target,options){
+          return $$rAF.throttle(function () {
+            if (opts.isRemoved) return;
+            var position = calculateMenuPosition(target, options);
 
-        angular.element($window)
-          .on('resize', debouncedOnResize)
-          .on('orientationchange', debouncedOnResize);
+            target.css( animator.toCss(position) );
+          });
+        })(element,opts);
+
+        angular.element($window).on('resize', debouncedOnResize)
+        angular.element($window).on('orientationchange', debouncedOnResize);
 
          return function deactivateResizing() {
 
             // Disable resizing handlers
-            angular.element($window)
-              .off('resize', debouncedOnResize)
-              .off('orientationchange', debouncedOnResize);
+            angular.element($window).off('resize', debouncedOnResize)
+            angular.element($window).off('orientationchange', debouncedOnResize);
           }
         }
 

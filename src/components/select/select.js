@@ -918,32 +918,31 @@ function SelectProvider($$interimElementProvider) {
        * Configure various resize listeners for screen changes
        */
       function activateResizing() {
+        var debouncedOnResize = (function(target,options){
 
-        var debouncedOnResize = $$rAF.throttle( function () {
-          if (opts.isRemoved) return;
+          return $$rAF.throttle(function () {
+            if (opts.isRemoved) return;
 
-          var updates = calculateMenuPositions(element, opts);
-          var container = updates.container;
-          var dropDown = updates.dropDown;
+            var updates = calculateMenuPositions(target, options);
+            var container = updates.container;
+            var dropDown = updates.dropDown;
 
-          return $q.all([
-            $animateCss(container.element, { to:animator.toCss(container.styles), duration:0 }).start(),
-            $animateCss(dropDown.element, { to:animator.toCss( dropDown.styles), duration:0 }).start()
-          ]);
+            container.element.css( animator.toCss(container.styles) );
+            dropDown.element.css( animator.toCss(dropDown.styles) );
+          });
 
-        });
+        })(element,opts);
 
-        angular.element($window)
-          .on('resize', debouncedOnResize)
-          .on('orientationchange', debouncedOnResize);
+
+        angular.element($window).on('resize', debouncedOnResize)
+        angular.element($window).on('orientationchange', debouncedOnResize);
 
         // Publish deactivation closure...
         return function deactivateResizing() {
 
           // Disable resizing handlers
-          angular.element($window)
-            .off('resize', debouncedOnResize)
-            .off('orientationchange', debouncedOnResize);
+          angular.element($window).off('resize', debouncedOnResize)
+          angular.element($window).off('orientationchange', debouncedOnResize);
         }
       }
 
