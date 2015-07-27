@@ -70,6 +70,39 @@ describe('<md-autocomplete>', function () {
       expect(scope.selectedItem).toBe(scope.match(scope.searchText)[ 0 ]);
     }));
 
+    it('should call user-defined focus/blur functions if they are provided', inject(function ($timeout) {
+      var focusFns = {
+        focusFn: function() {},
+        blurFn: function() {}
+      };
+      spyOn(focusFns, 'focusFn');
+      spyOn(focusFns, 'blurFn');
+
+      var scope    = createScope(null, focusFns);
+      var template = '\
+          <md-autocomplete\
+              md-selected-item="selectedItem"\
+              md-search-text="searchText"\
+              md-items="item in match(searchText)"\
+              md-item-text="item.display"\
+              ng-focus="focusFn"\
+              ng-blur="blurFn"\
+              placeholder="placeholder">\
+            <span md-highlight-text="searchText">{{item.display}}</span>\
+          </md-autocomplete>';
+      var element  = compile(template, scope);
+      var input    = element.find('input');
+
+      // ...............why doesn't this work
+      input.focus();
+      scope.$digest();
+      input.blur();
+      scope.$digest();
+
+      expect(focusFns.focusFn).toHaveBeenCalled();
+      expect(focusFns.blurFn).toHaveBeenCalled();
+    }));
+
     it('should allow you to set an input id without floating label', inject(function () {
       var scope    = createScope(null, { inputId: 'custom-input-id' });
       var template = '\

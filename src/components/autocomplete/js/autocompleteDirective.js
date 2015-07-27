@@ -137,6 +137,8 @@ function MdAutocomplete () {
       minLength:      '=?mdMinLength',
       delay:          '=?mdDelay',
       autofocus:      '=?mdAutofocus',
+      userFocus:      '=ngFocus',
+      userBlur:       '=ngBlur',
       floatingLabel:  '@?mdFloatingLabel',
       autoselect:     '=?mdAutoselect',
       menuClass:      '@?mdMenuClass',
@@ -212,8 +214,8 @@ function MdAutocomplete () {
                   ng-disabled="$mdAutocompleteCtrl.isDisabled"\
                   ng-model="$mdAutocompleteCtrl.scope.searchText"\
                   ng-keydown="$mdAutocompleteCtrl.keydown($event)"\
-                  ng-blur="$mdAutocompleteCtrl.blur()"\
-                  ng-focus="$mdAutocompleteCtrl.focus()"\
+                  ng-blur="$mdAutocompleteCtrl.blur($event, userBlur)"\
+                  ng-focus="$mdAutocompleteCtrl.focus($event, userFocus)"\
                   aria-owns="ul-{{$mdAutocompleteCtrl.id}}"\
                   aria-label="{{floatingLabel}}"\
                   aria-autocomplete="list"\
@@ -233,8 +235,8 @@ function MdAutocomplete () {
                 ng-disabled="$mdAutocompleteCtrl.isDisabled"\
                 ng-model="$mdAutocompleteCtrl.scope.searchText"\
                 ng-keydown="$mdAutocompleteCtrl.keydown($event)"\
-                ng-blur="$mdAutocompleteCtrl.blur()"\
-                ng-focus="$mdAutocompleteCtrl.focus()"\
+                ng-blur="$mdAutocompleteCtrl.blur($event, userBlur)"\
+                ng-focus="$mdAutocompleteCtrl.focus($event, userFocus)"\
                 placeholder="{{placeholder}}"\
                 aria-owns="ul-{{$mdAutocompleteCtrl.id}}"\
                 aria-label="{{placeholder}}"\

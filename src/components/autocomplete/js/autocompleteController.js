@@ -322,21 +322,25 @@ function MdAutocompleteCtrl ($scope, $element, $mdUtil, $mdConstant, $mdTheming,
   /**
    * Handles input blur event, determines if the dropdown should hide.
    */
-  function blur () {
+  function blur ($event, userBlurFn) {
+    console.log("!!", $event, userFocusFn);
     hasFocus = false;
     if (!noBlur) ctrl.hidden = true;
+    if (userBlurFn) userBlurFn($event);
   }
 
   /**
    * Handles input focus event, determines if the dropdown should show.
    */
-  function focus () {
+  function focus ($event, userFocusFn) {
+    console.log("..", $event, userFocusFn);
     hasFocus = true;
     //-- if searchText is null, let's force it to be a string
     if (!angular.isString($scope.searchText)) $scope.searchText = '';
     if ($scope.minLength > 0) return;
     ctrl.hidden = shouldHide();
     if (!ctrl.hidden) handleQuery();
+    if (userFocusFn) userFocusFn($event);
   }
 
   /**
